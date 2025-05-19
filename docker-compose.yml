@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2 # 使用较新且稳定的版本
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2 # 确保与 Zookeeper 版本兼容
+    container_name: kafka
+    ports:
+      - "9092:9092" # For clients outside docker (like our Spring Boot app)
+      - "29092:29092" # For clients inside docker network (if any)
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1 # 在 Kafka 集群中，每个 Broker 必须有唯一的 ID，用于标识。
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181' # 指定 Kafka 连接 ZooKeeper 的地址
+      # 定义 Kafka 监听器的安全协议映射
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      # 指定 Kafka 向客户端（生产者和消费者）公布的监听地址。客户端会通过这些地址连接 Kafka
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      # 设置 Kafka 内部主题 __consumer_offsets（存储消费者偏移量）的副本因子为 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # 设置消费者组初始重新平衡的延迟时间为 0 毫秒，表示立即开始重新平衡
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1 # Confluent specific
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1 # Confluent specific
+      # 设置 Kafka 事务状态日志的最小同步副本数（ISR，In-Sync Replicas）为 1。ISR 表示与领导者保持同步的副本数，
+      # 设为 1 表示只要领导者副本可用即可，适合单节点环境。
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # 设置 Kafka 事务状态日志的副本因子为 1。事务状态日志用于支持 Kafka 的事务功能，单节点环境下设为 1。
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
