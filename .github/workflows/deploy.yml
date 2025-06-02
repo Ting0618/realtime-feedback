@@ -35,7 +35,7 @@ jobs:
           HOSTNAME: ${{ secrets.EC2_HOST }}
           USER_NAME: ${{ secrets.EC2_USERNAME }}
           TARGET_DIR: /home/${{ secrets.EC2_USERNAME }}/app # EC2 上部署应用的目录
-          JAR_NAME: target/your-spring-boot-app-name.jar # 替换为你的 JAR 文件名和路径 (构建后实际的 JAR 路径)
+          JAR_NAME: target/realtime-feedback-0.0.1-SNAPSHOT.jar # 替换为你的 JAR 文件名和路径 (构建后实际的 JAR 路径)
           APP_LOG_FILE: /home/${{ secrets.EC2_USERNAME }}/app/app.log
 
         run: |
