@@ -36,6 +36,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       # 设置 Kafka 事务状态日志的副本因子为 1。事务状态日志用于支持 Kafka 的事务功能，单节点环境下设为 1。
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx256m"
 
   # 你的 Spring Boot 应用程序服务
   realtime-feedback: # 你可以给服务取任何名字

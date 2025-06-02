@@ -1,5 +1,5 @@
 # 使用一个包含 JDK 的基础镜像 (根据你的 Spring Boot 版本选择合适的 JDK 版本)
-FROM amazoncorretto:17-alpine-jdk as builder
+FROM amazoncorretto:17-alpine-jdk AS builder
 
 # 设置工作目录
 WORKDIR /app
@@ -28,7 +28,7 @@ WORKDIR /app
 # 通常是 target/your-app-name-version.jar
 # 如果你不确定，可以先构建一次，然后查看 target 目录
 COPY --from=builder /app/target/realtime-feedback-0.0.1-SNAPSHOT.jar app.jar
-# COPY target/realtime-feedback-0.0.1-SNAPSHOT.jar /app/app.jar
+# 确保将 realtime-feedback-0.0.1-SNAPSHOT.jar 替换为你实际的 JAR 文件名
 
 # 暴露应用程序运行的端口 (如果你的 Spring Boot 应用监听 8080)
 EXPOSE 8080
