@@ -1,0 +1,74 @@
+name: Deploy Spring Boot App to EC2 (Strategy 1)
+
+on:
+  push:
+    branches:
+      - main # 或者你的主分支
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 # 根据你的项目选择 Java 版本
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests # 如果使用 Gradle, 替换为 ./gradlew build -x test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy Spring Boot App to EC2
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOSTNAME: ${{ secrets.EC2_HOST }}
+          USER_NAME: ${{ secrets.EC2_USERNAME }}
+          TARGET_DIR: /home/${{ secrets.EC2_USERNAME }}/app # EC2 上部署应用的目录
+          JAR_NAME: target/your-spring-boot-app-name.jar # 替换为你的 JAR 文件名和路径 (构建后实际的 JAR 路径)
+          APP_LOG_FILE: /home/${{ secrets.EC2_USERNAME }}/app/app.log
+
+        run: |
+          echo "Deploying to EC2 instance: ${HOSTNAME}"
+          echo "$PRIVATE_KEY" > private_key.pem && chmod 600 private_key.pem
+
+          # 创建目标目录 (如果不存在)
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER_NAME}@${HOSTNAME} "mkdir -p ${TARGET_DIR}"
+
+          # 拷贝 JAR 文件到 EC2
+          scp -o StrictHostKeyChecking=no -i private_key.pem ${JAR_NAME} ${USER_NAME}@${HOSTNAME}:${TARGET_DIR}/app.jar
+
+          # SSH 到 EC2 并执行部署命令
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER_NAME}@${HOSTNAME} "
+            echo 'Kafka Docker container is assumed to be running independently.'
+
+            # 停止当前运行的应用 (如果存在)
+            # 你可能需要一个更健壮的方式来停止应用，例如通过 systemd 服务或查找 PID
+            echo 'Attempting to stop existing application...'
+            PID=\$(pgrep -f 'app.jar')
+            if [ -n \"\$PID\" ]; then
+              echo \"Stopping process \$PID...\"
+              kill \$PID
+              # 等待进程停止
+              sleep 5
+            else
+              echo 'No existing application process found.'
+            fi
+
+            echo 'Starting new Spring Boot application...'
+            cd ${TARGET_DIR}
+            nohup java -jar app.jar > ${APP_LOG_FILE} 2>&1 &
+            echo 'Spring Boot application deployment initiated.'
+            echo 'Check logs at ${APP_LOG_FILE} on the EC2 instance.'
+          "
+          rm -f private_key.pem
