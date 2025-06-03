@@ -48,7 +48,7 @@ jobs:
           echo "TARGET_DIR env var: ${TARGET_DIR}"
           echo "JAR_NAME env var: ${JAR_NAME}"
           echo "APP_LOG_FILE env var: ${APP_LOG_FILE}"
-          echo "PRIVATE_KEY content (first few chars): $(echo "$PRIVATE_KEY" | head -c 20)" # 只打印私钥前20字符，避免暴露完整密钥
+          echo "PRIVATE_KEY content (first few chars): $(echo "$PRIVATE_KEY" | head -c 20)"
           echo "--- End Debugging ---"
           
           echo "Deploying to EC2 instance: ${HOSTNAME}"
