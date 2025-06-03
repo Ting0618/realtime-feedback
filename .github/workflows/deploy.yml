@@ -21,6 +21,11 @@ jobs:
 
       - name: Build with Maven
         run: mvn clean package -DskipTests # 如果使用 Gradle, 替换为 ./gradlew build -x test
+        # 建议：考虑在这里获取 JAR 文件的确切名称，而不是硬编码
+        # 例如:
+        #   JAR_FILE_PATH=$(find target -name "*.jar" | head -n 1)
+        #   echo "JAR_OUTPUT_PATH=${JAR_FILE_PATH}" >> $GITHUB_ENV
+        # 然后在部署步骤中使用 env.JAR_OUTPUT_PATH
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -35,52 +40,147 @@ jobs:
           HOSTNAME: ${{ secrets.EC2_HOST }}
           USER_NAME: ${{ secrets.EC2_USERNAME }}
           TARGET_DIR: /home/${{ secrets.EC2_USERNAME }}/app # EC2 上部署应用的目录
-          JAR_NAME: target/realtime-feedback-0.0.1-SNAPSHOT.jar # 替换为你的 JAR 文件名和路径 (构建后实际的 JAR 路径)
+          # 重要：强烈建议不要硬编码 JAR_NAME。请参考上面 Build 步骤的注释，或在 pom.xml 中使用 <finalName>
+          JAR_NAME_IN_RUNNER: target/realtime-feedback-0.0.1-SNAPSHOT.jar # 这是在 Runner 上的路径
+          REMOTE_JAR_NAME: app.jar # 这是将部署到 EC2 上的 JAR 名称
           APP_LOG_FILE: /home/${{ secrets.EC2_USERNAME }}/app/app.log
 
         run: |
-          echo "--- Debugging Environment Variables ---"
-          echo "MY_TEST_VALUE env var: ${{ secrets.MY_TEST_VALUE }}"
+          echo "--- Debugging Environment Variables (Runner) ---"
+          echo "MY_TEST_VALUE env var: ${{ secrets.MY_TEST_VALUE }}" # 用于测试的 Secret
           echo "Raw EC2_HOST Secret: ${{ secrets.EC2_HOST }}"
           echo "HOSTNAME env var: ${HOSTNAME}"
-          echo "USER_NAME env var: ${{ secrets.EC2_USERNAME }}"
+          echo "USER_NAME env var: ${USER_NAME}" # 通常是 'ec2-user', 'ubuntu', 'admin' 等
           echo "AWS_REGION env var: ${{ secrets.AWS_REGION }}"
           echo "TARGET_DIR env var: ${TARGET_DIR}"
-          echo "JAR_NAME env var: ${JAR_NAME}"
+          echo "JAR_NAME_IN_RUNNER env var: ${JAR_NAME_IN_RUNNER}"
+          echo "REMOTE_JAR_NAME env var: ${REMOTE_JAR_NAME}"
           echo "APP_LOG_FILE env var: ${APP_LOG_FILE}"
-          echo "PRIVATE_KEY content (first few chars): $(echo "$PRIVATE_KEY" | head -c 20)"
-          echo "--- End Debugging ---"
+          echo "PRIVATE_KEY content (first few chars): $(echo "$PRIVATE_KEY" | head -c 30)"
+          echo "--- End Debugging (Runner) ---"
           
-          echo "Deploying to EC2 instance: ${HOSTNAME}"
+          echo "Deploying to EC2 instance: ${HOSTNAME} as user ${USER_NAME}"
           echo "$PRIVATE_KEY" > private_key.pem && chmod 600 private_key.pem
+          echo "Private key file created and permissions set."
 
-          # 创建目标目录 (如果不存在)
+          echo "Step 1: Create target directory on EC2 (if it doesn't exist)"
           ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER_NAME}@${HOSTNAME} "mkdir -p ${TARGET_DIR}"
+          echo "Remote 'mkdir -p ${TARGET_DIR}' command completed."
 
-          # 拷贝 JAR 文件到 EC2
-          scp -o StrictHostKeyChecking=no -i private_key.pem ${JAR_NAME} ${USER_NAME}@${HOSTNAME}:${TARGET_DIR}/app.jar
+          echo "Step 2: Copy JAR file to EC2"
+          # 检查本地 JAR 文件是否存在
+          if [ ! -f "${JAR_NAME_IN_RUNNER}" ]; then
+            echo "ERROR: JAR file '${JAR_NAME_IN_RUNNER}' not found in runner. Please check build output and JAR_NAME_IN_RUNNER path."
+            exit 1
+          fi
+          echo "Local JAR file '${JAR_NAME_IN_RUNNER}' found."
+          scp -o StrictHostKeyChecking=no -i private_key.pem "${JAR_NAME_IN_RUNNER}" ${USER_NAME}@${HOSTNAME}:${TARGET_DIR}/${REMOTE_JAR_NAME}
+          echo "SCP command to copy '${JAR_NAME_IN_RUNNER}' to '${TARGET_DIR}/${REMOTE_JAR_NAME}' completed."
 
-          # SSH 到 EC2 并执行部署命令
+          echo "Step 3: Execute deployment script on EC2"
           ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER_NAME}@${HOSTNAME} "
+            set -ex  # Enable detailed tracing and exit on error in remote script
+
+            echo '--- Starting Remote Execution ---'
+            echo \"Current remote user: \$(whoami)\"
+            echo \"Initial remote directory: \$(pwd)\"
+
+            echo 'Verifying essential commands are available...'
+            if ! command -v pgrep &> /dev/null; then
+                echo 'Error: pgrep command not found on remote host.'
+                # 你可以在这里选择 exit 1 或者尝试其他方式查找进程
+            fi
+            if ! command -v java &> /dev/null; then
+                echo 'Error: java command not found on remote host. Please install Java.'
+                exit 1
+            fi
+            echo 'Java version on remote:'
+            java -version
+
             echo 'Kafka Docker container is assumed to be running independently.'
 
-            # 停止当前运行的应用 (如果存在)
-            # 你可能需要一个更健壮的方式来停止应用，例如通过 systemd 服务或查找 PID
-            echo 'Attempting to stop existing application...'
-            PID=\$(pgrep -f 'app.jar')
+            echo 'Attempting to stop existing application (if any)...'
+            # 使用 PGPID 来避免 pgrep 找到它自己
+            # 注意: 如果 'app.jar' 是一个非常通用的名字，考虑使用更具体的 pgrep 模式
+            PGPID=\$\$ # 这是本地 shell 的 PID, 在远程会不同
+            PID=\$(pgrep -f \"java -jar ${REMOTE_JAR_NAME}\" | grep -v \$PGPID || true)
+
             if [ -n \"\$PID\" ]; then
-              echo \"Stopping process \$PID...\"
+              echo \"Found existing application process(es) with PID(s): \$PID. Attempting to stop...\"
+              # 如果可能有多个PID，需要循环 kill
+              # 对于单个 PID:
               kill \$PID
-              # 等待进程停止
-              sleep 5
+              echo \"Kill command exit status: \$?. Waiting for process to terminate...\"
+              # 等待进程停止，可以稍微智能一点，而不是固定 sleep
+              COUNT=0
+              while kill -0 \$PID 2>/dev/null && [ \$COUNT -lt 10 ]; do
+                echo 'Process still alive, waiting...'
+                sleep 1
+                COUNT=\$((COUNT+1))
+              done
+              if kill -0 \$PID 2>/dev/null; then
+                echo 'Process did not stop after 10 seconds, attempting kill -9.'
+                kill -9 \$PID
+                echo \"Kill -9 command exit status: \$?\"
+                sleep 2
+              else
+                echo 'Process stopped successfully.'
+              fi
             else
-              echo 'No existing application process found.'
+              echo 'No existing application process found matching java -jar ${REMOTE_JAR_NAME}.'
             fi
 
+            echo 'Verifying target directory and its contents on remote...'
+            ls -ld \"${TARGET_DIR}\"
+          
+            echo \"Changing to target directory: ${TARGET_DIR}\"
+            cd \"${TARGET_DIR}\"
+            echo \"Current remote directory after cd: \$(pwd)\"
+
+            echo \"Verifying ${REMOTE_JAR_NAME} in current directory...\"
+            if [ ! -f \"${REMOTE_JAR_NAME}\" ]; then
+                echo \"ERROR: ${REMOTE_JAR_NAME} not found in ${TARGET_DIR} on remote. SCP might have failed.\"
+                exit 1
+            fi
+            ls -l \"${REMOTE_JAR_NAME}\"
+          
             echo 'Starting new Spring Boot application...'
-            cd ${TARGET_DIR}
-            nohup java -jar app.jar > ${APP_LOG_FILE} 2>&1 &
-            echo 'Spring Boot application deployment initiated.'
-            echo 'Check logs at ${APP_LOG_FILE} on the EC2 instance.'
+            # 确保日志文件目录存在且用户有权写入
+            nohup java -jar \"${REMOTE_JAR_NAME}\" > \"${APP_LOG_FILE}\" 2>&1 &
+          
+            echo 'Nohup command initiated. Waiting a few seconds for application to start...'
+            sleep 8 # 给应用一点启动时间
+
+            echo \"Checking for new application process:\"
+            NEW_PID=\$(pgrep -f \"java -jar ${REMOTE_JAR_NAME}\" | grep -v \$PGPID || true)
+            if [ -n \"\$NEW_PID\" ]; then
+                echo \"New application process found with PID(s): \$NEW_PID\"
+            else
+                echo \"Warning: New application process NOT found with pgrep. Check logs immediately.\"
+            fi
+          
+            echo \"Last 20 lines of application log (${APP_LOG_FILE}):\"
+            tail -n 20 \"${APP_LOG_FILE}\" || echo \"Could not tail application log. File might be empty or not yet created.\"
+
+            echo 'Spring Boot application deployment initiated (background process).'
+            echo \"Check full logs at ${APP_LOG_FILE} on the EC2 instance: ${USER_NAME}@${HOSTNAME}\"
+            echo '--- Remote Execution Finished ---'
           "
+          # 上面这个大的 SSH 命令块的退出状态是 GitHub Actions 看到的退出状态
+          SSH_EXIT_CODE=$?
+          if [ $SSH_EXIT_CODE -ne 0 ]; then
+            echo "ERROR: SSH command block failed with exit code $SSH_EXIT_CODE."
+            # 你可以在这里决定是否让整个 job 失败
+            # exit $SSH_EXIT_CODE
+          fi
+          
+          echo "Step 4: Clean up private key file from runner"
           rm -f private_key.pem
+          echo "Private key file removed from runner."
+
+          # 如果 SSH 命令块失败了，明确地使 job 失败
+          if [ $SSH_EXIT_CODE -ne 0 ]; then
+            exit $SSH_EXIT_CODE
+          fi
+
+          echo "Deployment script finished."
