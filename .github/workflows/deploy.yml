@@ -40,6 +40,7 @@ jobs:
 
         run: |
           echo "--- Debugging Environment Variables ---"
+          echo "MY_TEST_VALUE env var: ${{ secrets.MY_TEST_VALUE }}"
           echo "Raw EC2_HOST Secret: ${{ secrets.EC2_HOST }}" # 直接打印 Secret 的原始引用
           echo "HOSTNAME env var: ${HOSTNAME}"
           echo "USER_NAME env var: ${{ secrets.EC2_USERNAME }}"
