@@ -1,0 +1,12 @@
+name: Test Secrets Access
+
+on: main
+
+jobs:
+  test_secrets_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print Secrets
+        run: |
+          echo "Attempting to access MY_TEST_VALUE: ${{ secrets.MY_TEST_VALUE }}"
+          echo "Attempting to access EC2_HOST: ${{ secrets.EC2_HOST }}"
