@@ -44,6 +44,7 @@ jobs:
           echo "Raw EC2_HOST Secret: ${{ secrets.EC2_HOST }}" # 直接打印 Secret 的原始引用
           echo "HOSTNAME env var: ${HOSTNAME}"
           echo "USER_NAME env var: ${{ secrets.EC2_USERNAME }}"
+          echo "AWS_REGION env var: ${{ secrets.AWS_REGION }}"
           echo "TARGET_DIR env var: ${TARGET_DIR}"
           echo "JAR_NAME env var: ${JAR_NAME}"
           echo "APP_LOG_FILE env var: ${APP_LOG_FILE}"
