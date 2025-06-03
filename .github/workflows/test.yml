@@ -13,4 +13,4 @@ jobs:
         run: |
           echo "Attempting to access MY_TEST_VALUE: ${{ secrets.MY_TEST_VALUE }}"
           echo "Attempting to access EC2_HOST: ${{ secrets.EC2_HOST }}"
-          echo "Attempting to access MY_TEST_ACTION: ${{ secrets.MY_TEST_ACTION }}"
+          echo "Attempting to access test: ${{ secrets.test }}"
