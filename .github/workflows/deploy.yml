@@ -39,6 +39,16 @@ jobs:
           APP_LOG_FILE: /home/${{ secrets.EC2_USERNAME }}/app/app.log
 
         run: |
+          echo "--- Debugging Environment Variables ---"
+          echo "Raw EC2_HOST Secret: ${{ secrets.EC2_HOST }}" # 直接打印 Secret 的原始引用
+          echo "HOSTNAME env var: ${HOSTNAME}"
+          echo "USER_NAME env var: ${USER_NAME}"
+          echo "TARGET_DIR env var: ${TARGET_DIR}"
+          echo "JAR_NAME env var: ${JAR_NAME}"
+          echo "APP_LOG_FILE env var: ${APP_LOG_FILE}"
+          echo "PRIVATE_KEY content (first few chars): $(echo "$PRIVATE_KEY" | head -c 20)" # 只打印私钥前20字符，避免暴露完整密钥
+          echo "--- End Debugging ---"
+          
           echo "Deploying to EC2 instance: ${HOSTNAME}"
           echo "$PRIVATE_KEY" > private_key.pem && chmod 600 private_key.pem
 
